@@ -141,13 +141,14 @@
             </div>
             
             <div class="p-4 flex-1">
+                <!-- 오류 수정: 빈 상태 메시지를 컨테이너 밖으로 안전하게 분리 -->
+                <div class="text-center py-10 text-gray-400 text-sm" id="emptyStateMsg">
+                    <i class="fa-regular fa-folder-open text-3xl mb-2 block text-gray-300"></i>
+                    아직 기록이 없습니다.
+                </div>
                 <!-- 기록 목록 컨테이너 -->
                 <div id="timelineContainer" class="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
                     <!-- JavaScript로 목록 생성됨 -->
-                    <div class="text-center py-10 text-gray-400 text-sm" id="emptyStateMsg">
-                        <i class="fa-regular fa-folder-open text-3xl mb-2 block text-gray-300"></i>
-                        아직 기록이 없습니다.
-                    </div>
                 </div>
             </div>
         </div>
@@ -565,12 +566,14 @@
                 document.getElementById('currentFilterDate').innerText = '전체 보기';
             }
 
+            // 오류 수정: 메시지를 삭제하지 않고 숨기거나 보여주기만 하도록 변경
             if (filteredRecords.length === 0) {
-                container.appendChild(emptyMsg);
                 emptyMsg.style.display = 'block';
+                container.style.display = 'none';
                 return;
             } else {
                 emptyMsg.style.display = 'none';
+                container.style.display = 'block';
             }
 
             const grouped = {};
