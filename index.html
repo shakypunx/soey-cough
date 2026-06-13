@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>쏘이 기침 기록장</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js for statistics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f3f4f6; /* 연한 회색 배경 */
+            color: #374151;
+            /* 모바일에서 스크롤 바운스 효과 제어 */
+            overscroll-behavior-y: none;
+        }
+        
+        /* 버튼 클릭 시 눌리는 효과 */
+        .btn-press:active {
+            transform: scale(0.95);
+        }
+
+        /* 큰 기침 버튼 스타일 */
+        .cough-btn-main {
+            background: linear-gradient(145deg, #FF9A9E, #FECFEF);
+            box-shadow: 0 10px 20px rgba(255, 154, 158, 0.4), inset 0 -4px 0 rgba(0,0,0,0.1);
+            transition: all 0.1s;
+        }
+        
+        .cough-btn-main:active {
+            box-shadow: 0 5px 10px rgba(255, 154, 158, 0.4), inset 0 -2px 0 rgba(0,0,0,0.1);
+            transform: translateY(2px) scale(0.98);
+        }
+
+        /* 하단 네비게이션 스타일 */
+        .nav-item.active {
+            color: #EC4899; /* 핑크색 강조 */
+            font-weight: bold;
+        }
+        
+        /* 스크롤바 숨기기 (깔끔한 UI) */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 모달 애니메이션 */
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .modal-animate {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden max-w-md mx-auto bg-white shadow-xl relative">
+
+    <header class="bg-white px-5 py-4 border-b border-gray-100 flex justify-between items-center z-10 sticky top-0">
+        <div>
+            <h1 class="text-xl font-bold text-gray-800 flex items-center">
+                <i class="fa-solid fa-baby text-pink-400 mr-2"></i>쏘이 기침 기록장
+                <!-- 동기화 상태 아이콘 추가 -->
+                <i class="fa-solid fa-cloud text-blue-400 ml-2 text-sm" id="syncStatus" title="실시간 동기화 중"></i>
+            </h1>
+            <p class="text-xs text-gray-500 mt-1" id="currentDateDisplay">오늘 날짜 로딩중...</p>
+        </div>
+        <button onclick="exportData()" class="w-10 h-10 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-100 transition btn-press" aria-label="데이터 내보내기" title="데이터 복사하기">
+            <i class="fa-solid fa-share-nodes"></i>
+        </button>
+    </header>
+
+    <main class="flex-1 overflow-y-auto no-scrollbar relative bg-gray-50" id="mainContent">
+        
+        <!-- 탭 1: 기록하기 (기본 화면) -->
+        <div id="tab-record" class="h-full flex flex-col p-5 pb-24">
+            
+            <!-- 오늘의 요약 -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6 flex justify-between items-center">
+                <div>
+                    <h2 class="text-sm text-gray-500 font-medium">오늘 기침 횟수</h2>
+                    <div class="text-3xl font-bold text-gray-800 mt-1"><span id="todayTotalCount">0</span><span class="text-lg font-normal text-gray-500 ml-1">회</span></div>
+                </div>
+                <div class="w-12 h-12 rounded-full bg-pink-50 flex items-center justify-center text-pink-500">
+                    <i class="fa-solid fa-chart-simple"></i>
+                </div>
+            </div>
+
+            <!-- 기침 종류 선택 (옵션) -->
+            <div class="mb-4">
+                <h3 class="text-sm font-medium text-gray-600 mb-2 ml-1">기침 종류 (선택)</h3>
+                <div class="flex gap-2" id="coughTypeSelector">
+                    <button type="button" class="type-btn flex-1 py-2 rounded-xl text-sm font-medium transition bg-gray-100 text-gray-500 border border-transparent" data-type="건조한(마른)">마른 기침</button>
+                    <button type="button" class="type-btn flex-1 py-2 rounded-xl text-sm font-medium transition bg-gray-100 text-gray-500 border border-transparent" data-type="가래(젖은)">가래 기침</button>
+                    <button type="button" class="type-btn flex-1 py-2 rounded-xl text-sm font-medium transition bg-gray-100 text-gray-500 border border-transparent" data-type="심한(발작)">심한 기침</button>
+                </div>
+                <input type="hidden" id="selectedCoughType" value="">
+            </div>
+
+            <!-- 메모 입력란 -->
+            <div class="mb-6">
+                <input type="text" id="coughMemo" placeholder="특이사항 메모 (예: 자다가 깸, 토함)" class="w-full px-4 py-3 rounded-xl bg-white border border-gray-200 focus:outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-100 text-sm transition">
+            </div>
+
+            <!-- 중앙 큰 버튼 (기록) -->
+            <div class="flex-1 flex flex-col items-center justify-center min-h-[200px]">
+                <button id="mainRecordBtn" class="cough-btn-main w-48 h-48 rounded-full flex flex-col items-center justify-center text-white relative outline-none select-none">
+                    <div class="absolute inset-0 border-4 border-white/20 rounded-full m-2 pointer-events-none"></div>
+                    <i class="fa-solid fa-lungs text-4xl mb-2 drop-shadow-md"></i>
+                    <span class="text-2xl font-bold drop-shadow-md tracking-wider">기침 기록</span>
+                    <span class="text-sm mt-1 opacity-90 font-medium">터치하세요</span>
+                </button>
+                <p class="text-xs text-gray-400 mt-6 text-center">버튼을 누르면 현재 시간이 기록됩니다.<br>종류와 메모는 선택사항입니다.</p>
+                
+                <button onclick="openManualEntryModal()" class="mt-5 px-5 py-2 text-sm text-pink-500 bg-pink-50 border border-pink-100 rounded-full font-medium hover:bg-pink-100 transition btn-press flex items-center shadow-sm">
+                    <i class="fa-solid fa-clock-rotate-left mr-1.5"></i> 지난 기록 수기로 추가
+                </button>
+            </div>
+            
+            <!-- 방금 기록된 알림 피드백 (숨김 상태가 기본) -->
+            <div id="toastMessage" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg opacity-0 transition-opacity duration-300 pointer-events-none z-50 text-sm font-medium whitespace-nowrap">
+                <i class="fa-solid fa-check text-green-400 mr-2"></i>기록되었습니다.
+            </div>
+        </div>
+
+        <!-- 탭 2: 타임라인 (기록 목록) -->
+        <div id="tab-timeline" class="hidden h-full flex flex-col bg-gray-50 pb-20">
+            <div class="p-4 bg-white border-b border-gray-100 flex justify-between items-center sticky top-0 z-10">
+                <h2 class="font-bold text-gray-800">기록 목록</h2>
+                <!-- 필터/날짜 선택 (간소화) -->
+                <div class="text-sm font-medium text-pink-500 bg-pink-50 px-3 py-1 rounded-full cursor-pointer btn-press" onclick="showDateFilter()">
+                    <span id="currentFilterDate">전체 보기</span> <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
+                </div>
+            </div>
+            
+            <div class="p-4 flex-1">
+                <!-- 기록 목록 컨테이너 -->
+                <div id="timelineContainer" class="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+                    <!-- JavaScript로 목록 생성됨 -->
+                    <div class="text-center py-10 text-gray-400 text-sm" id="emptyStateMsg">
+                        <i class="fa-regular fa-folder-open text-3xl mb-2 block text-gray-300"></i>
+                        아직 기록이 없습니다.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 탭 3: 통계 (의사 선생님 보여주기용) -->
+        <div id="tab-stats" class="hidden h-full flex flex-col bg-gray-50 pb-20 p-4 space-y-4">
+            
+            <!-- 주간 요약 카드 -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center">
+                    <i class="fa-solid fa-calendar-week text-blue-400 mr-2"></i>최근 7일 추이
+                </h3>
+                <div class="h-48 w-full relative">
+                    <canvas id="weeklyChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 시간대별 발생 카드 -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center">
+                    <i class="fa-solid fa-clock text-orange-400 mr-2"></i>시간대별 발생 빈도 (전체)
+                </h3>
+                <p class="text-xs text-gray-500 mb-3">어느 시간대에 기침이 심한지 확인하세요. (예: 야간 기침)</p>
+                <div class="grid grid-cols-4 gap-2 text-center" id="timeStatsContainer">
+                    <!-- JS로 채워짐 -->
+                </div>
+            </div>
+            
+            <!-- 증상 요약 카드 -->
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6">
+                <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center">
+                    <i class="fa-solid fa-stethoscope text-green-400 mr-2"></i>기침 양상 (전체)
+                </h3>
+                <div id="typeStatsContainer" class="space-y-2">
+                    <!-- JS로 채워짐 -->
+                </div>
+            </div>
+            
+        </div>
+
+    </main>
+
+    <nav class="bg-white border-t border-gray-200 fixed bottom-0 w-full max-w-md pb-safe pt-2 px-6 flex justify-between items-center z-20 pb-4">
+        <button class="nav-item active flex flex-col items-center justify-center w-16 text-gray-400 transition-colors" data-target="tab-record" onclick="switchTab('record', this)">
+            <i class="fa-solid fa-pen-to-square text-xl mb-1"></i>
+            <span class="text-[10px]">기록</span>
+        </button>
+        <button class="nav-item flex flex-col items-center justify-center w-16 text-gray-400 transition-colors" data-target="tab-timeline" onclick="switchTab('timeline', this)">
+            <i class="fa-solid fa-list-ul text-xl mb-1"></i>
+            <span class="text-[10px]">목록</span>
+        </button>
+        <button class="nav-item flex flex-col items-center justify-center w-16 text-gray-400 transition-colors" data-target="tab-stats" onclick="switchTab('stats', this)">
+            <i class="fa-solid fa-chart-pie text-xl mb-1"></i>
+            <span class="text-[10px]">통계</span>
+        </button>
+    </nav>
+
+    <!-- 오버레이 -->
+    <div id="modalOverlay" class="fixed inset-0 bg-black/50 z-40 hidden transition-opacity opacity-0" onclick="closeModal()"></div>
+    
+    <!-- 옵션 모달 (하단에서 올라옴) -->
+    <div id="optionModal" class="fixed bottom-0 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white rounded-t-3xl z-50 hidden flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.1)] pb-safe transition-transform duration-300 translate-y-full">
+        <div class="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mt-3 mb-5"></div>
+        <div class="px-6 pb-8">
+            <h3 class="text-lg font-bold text-gray-800 mb-4" id="modalTitle">날짜 필터</h3>
+            
+            <div id="dateFilterContent" class="space-y-2 mb-6 hidden max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                <button class="w-full text-left px-4 py-3 rounded-xl border border-gray-200 font-medium text-gray-700 hover:bg-gray-50 flex justify-between items-center" onclick="applyDateFilter('all')">
+                    전체 보기
+                    <i class="fa-solid fa-check text-pink-500 hidden" id="check-all"></i>
+                </button>
+                <!-- 날짜 목록이 여기에 동적으로 추가됨 -->
+                <div id="dynamicDateList" class="space-y-2 mt-2"></div>
+            </div>
+
+            <div id="exportContent" class="hidden">
+                 <p class="text-sm text-gray-600 mb-4">의사 선생님께 보여드릴 수 있도록 기록을 텍스트로 복사합니다.</p>
+                 <textarea id="exportTextarea" class="w-full h-32 p-3 border border-gray-300 rounded-xl text-xs text-gray-700 mb-3 bg-gray-50" readonly></textarea>
+                 <div class="flex gap-2">
+                     <button onclick="copyToClipboard()" class="flex-1 bg-gray-800 text-white py-3 rounded-xl font-medium btn-press flex justify-center items-center">
+                         <i class="fa-solid fa-copy mr-2"></i>복사하기
+                     </button>
+                     <button onclick="confirmClearData()" class="px-4 py-3 bg-red-50 text-red-500 rounded-xl font-medium border border-red-100 btn-press">
+                         초기화
+                     </button>
+                 </div>
+            </div>
+
+            <div id="confirmClearContent" class="hidden">
+                <div class="text-center py-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-500 mx-auto mb-3">
+                        <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                    </div>
+                    <p class="font-bold text-gray-800 text-lg mb-1">모든 기록을 삭제할까요?</p>
+                    <p class="text-sm text-gray-500 mb-6">삭제된 데이터는 복구할 수 없습니다.</p>
+                    <div class="flex gap-2">
+                        <button onclick="closeModal()" class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium btn-press">취소</button>
+                        <button onclick="clearAllData()" class="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium btn-press">삭제하기</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 항목 삭제 확인 모달 내용 -->
+            <div id="deleteItemContent" class="hidden">
+                <div class="text-center py-4">
+                    <p class="font-bold text-gray-800 text-lg mb-1">이 기록을 삭제할까요?</p>
+                    <p class="text-sm text-gray-500 mb-6">해당 기침 기록 1건이 삭제됩니다.</p>
+                    <div class="flex gap-2">
+                        <button onclick="closeModal()" class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium btn-press">취소</button>
+                        <button id="confirmItemDeleteBtn" class="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium btn-press">삭제</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 수기 기록 추가 모달 내용 -->
+            <div id="manualEntryContent" class="hidden">
+                <p class="text-sm text-gray-600 mb-4">과거의 기침 기록을 직접 입력할 수 있습니다.</p>
+                <div class="space-y-3 mb-6">
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 ml-1">날짜 <span class="text-pink-500">*</span></label>
+                            <input type="date" id="manualDate" class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:border-pink-300 focus:ring-2 focus:ring-pink-100 focus:outline-none transition-all">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 ml-1">시간 <span class="text-pink-500">*</span></label>
+                            <input type="time" id="manualTime" class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:border-pink-300 focus:ring-2 focus:ring-pink-100 focus:outline-none transition-all">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 ml-1">기침 종류 (선택)</label>
+                        <select id="manualType" class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:border-pink-300 focus:ring-2 focus:ring-pink-100 focus:outline-none transition-all appearance-none">
+                            <option value="">선택 안함</option>
+                            <option value="건조한(마른)">마른 기침</option>
+                            <option value="가래(젖은)">가래 기침</option>
+                            <option value="심한(발작)">심한 기침</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 ml-1">메모 (선택)</label>
+                        <input type="text" id="manualMemo" placeholder="예: 자다가 깸" class="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:border-pink-300 focus:ring-2 focus:ring-pink-100 focus:outline-none transition-all">
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="closeModal()" class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium btn-press">취소</button>
+                    <button onclick="addManualRecord()" class="flex-1 py-3 bg-pink-500 text-white rounded-xl font-medium btn-press shadow-md shadow-pink-200">저장하기</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 맞춤 스크롤바 모달용 -->
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 전역 상태 변수
+        let records = []; 
+        let currentFilter = 'all'; 
+        let chartInstance = null; 
+
+        // 🌟 아버님이 직접 만드신 파이어베이스 정보로 교체 완료!
+        const firebaseConfig = {
+            apiKey: "AIzaSyA2NctHKQt2I9R0BeF18X1BPg4JCrpq5uc",
+            authDomain: "soey-cough.firebaseapp.com",
+            projectId: "soey-cough",
+            storageBucket: "soey-cough.firebasestorage.app",
+            messagingSenderId: "27088645431",
+            appId: "1:27088645431:web:cc003be99000bb43183eb2"
+        };
+        
+        let app, auth, db;
+        
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase initialization error", e);
+        }
+
+        // 앱 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            updateDateDisplay();
+            setupEventListeners();
+            initAuth(); // 클라우드 인증 및 실시간 동기화 시작
+            
+            // 날짜 변경 체크 타이머
+            setInterval(updateDateDisplay, 60000); 
+        });
+
+        async function initAuth() {
+            try {
+                // 앱에 접근하는 부모님을 위한 익명 로그인 처리
+                await signInAnonymously(auth);
+                // 인증 성공 후 가족 공유 데이터베이스 구독 시작
+                setupRealtimeSync();
+            } catch (error) {
+                console.error("Authentication failed:", error);
+                document.getElementById('syncStatus').classList.replace('text-blue-400', 'text-red-400');
+                document.getElementById('syncStatus').classList.replace('fa-cloud', 'fa-cloud-arrow-down');
+                document.getElementById('syncStatus').title = '연결 실패';
+            }
+        }
+
+        function setupRealtimeSync() {
+            if (!auth.currentUser) return;
+            
+            // 공용 데이터베이스 경로 (우리가 만든 'cough_records' 서랍장)
+            const recordsRef = collection(db, 'cough_records');
+            
+            // 실시간 데이터 수신 (누군가 기록하면 즉시 반영)
+            onSnapshot(recordsRef, (snapshot) => {
+                const loadedRecords = [];
+                snapshot.forEach((doc) => {
+                    loadedRecords.push({ docId: doc.id, ...doc.data() });
+                });
+                
+                // 시간순(최신이 먼저 오게) 내림차순 정렬
+                records = loadedRecords.sort((a, b) => b.timestamp - a.timestamp);
+                
+                // UI 갱신
+                updateUI();
+                
+                // 동기화 아이콘 깜빡임 효과 (업데이트 확인용)
+                const syncIcon = document.getElementById('syncStatus');
+                syncIcon.style.opacity = '0.3';
+                setTimeout(() => { syncIcon.style.opacity = '1'; }, 300);
+            }, (error) => {
+                console.error("Data sync error:", error);
+            });
+        }
+
+        function getFormattedDate(dateObj = new Date()) {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function getFormattedTime(dateObj = new Date()) {
+            const hours = String(dateObj.getHours()).padStart(2, '0');
+            const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
+        
+        function formatDisplayDate(dateStr) {
+            const date = new Date(dateStr);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            const dayName = days[date.getDay()];
+            
+            if (dateStr === getFormattedDate(today)) return `오늘 (${month}/${day} ${dayName})`;
+            if (dateStr === getFormattedDate(yesterday)) return `어제 (${month}/${day} ${dayName})`;
+            
+            return `${month}월 ${day}일 (${dayName})`;
+        }
+
+        function updateDateDisplay() {
+            const today = new Date();
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            const dateString = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일 ${days[today.getDay()]}요일`;
+            document.getElementById('currentDateDisplay').textContent = dateString;
+        }
+
+        function setupEventListeners() {
+            const typeBtns = document.querySelectorAll('.type-btn');
+            const hiddenTypeInput = document.getElementById('selectedCoughType');
+            
+            typeBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (this.classList.contains('bg-pink-100')) {
+                        this.classList.remove('bg-pink-100', 'text-pink-600', 'border-pink-300');
+                        this.classList.add('bg-gray-100', 'text-gray-500', 'border-transparent');
+                        hiddenTypeInput.value = '';
+                    } else {
+                        typeBtns.forEach(b => {
+                            b.classList.remove('bg-pink-100', 'text-pink-600', 'border-pink-300');
+                            b.classList.add('bg-gray-100', 'text-gray-500', 'border-transparent');
+                        });
+                        this.classList.remove('bg-gray-100', 'text-gray-500', 'border-transparent');
+                        this.classList.add('bg-pink-100', 'text-pink-600', 'border-pink-300');
+                        hiddenTypeInput.value = this.dataset.type;
+                    }
+                });
+            });
+
+            const recordBtn = document.getElementById('mainRecordBtn');
+            recordBtn.addEventListener('click', addRecord);
+        }
+
+        async function addRecord() {
+            if (!auth.currentUser) {
+                alert("아직 클라우드에 연결되지 않았습니다. 잠시 후 다시 시도해주세요.");
+                return;
+            }
+            
+            const now = new Date();
+            const typeInput = document.getElementById('selectedCoughType').value;
+            const memoInput = document.getElementById('coughMemo').value.trim();
+
+            const newRecord = {
+                timestamp: now.getTime(),
+                date: getFormattedDate(now),
+                time: getFormattedTime(now),
+                type: typeInput,
+                memo: memoInput,
+                hour: now.getHours()
+            };
+
+            try {
+                const recordsRef = collection(db, 'cough_records');
+                await addDoc(recordsRef, newRecord); // 클라우드에 저장
+                
+                // 폼 초기화
+                document.getElementById('coughMemo').value = '';
+                document.querySelectorAll('.type-btn').forEach(b => {
+                    b.classList.remove('bg-pink-100', 'text-pink-600', 'border-pink-300');
+                    b.classList.add('bg-gray-100', 'text-gray-500', 'border-transparent');
+                });
+                document.getElementById('selectedCoughType').value = '';
+
+                showToast('<i class="fa-solid fa-check text-green-400 mr-2"></i>기록되었습니다.');
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                alert("기록 저장에 실패했습니다. 다시 시도해주세요.");
+            }
+        }
+
+        function showToast(htmlContent = '<i class="fa-solid fa-check text-green-400 mr-2"></i>기록되었습니다.') {
+            const toast = document.getElementById('toastMessage');
+            toast.innerHTML = htmlContent;
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 2000);
+        }
+
+        function updateUI() {
+            updateTodayCount();
+            if(!document.getElementById('tab-timeline').classList.contains('hidden')) {
+                renderTimeline();
+            }
+            if(!document.getElementById('tab-stats').classList.contains('hidden')) {
+                renderStats();
+            }
+        }
+
+        function updateTodayCount() {
+            const today = getFormattedDate();
+            const count = records.filter(record => record.date === today).length;
+            
+            const countEl = document.getElementById('todayTotalCount');
+            const currentVal = parseInt(countEl.innerText);
+            
+            if (currentVal !== count) {
+                countEl.style.transform = 'scale(1.3)';
+                countEl.style.color = '#EC4899'; 
+                setTimeout(() => {
+                    countEl.innerText = count;
+                    countEl.style.transform = 'scale(1)';
+                    countEl.style.color = '';
+                    countEl.style.transition = 'all 0.3s ease';
+                }, 150);
+            } else {
+                countEl.innerText = count;
+            }
+        }
+
+        function switchTab(tabId, btnElement) {
+            document.getElementById('tab-record').classList.add('hidden');
+            document.getElementById('tab-timeline').classList.add('hidden');
+            document.getElementById('tab-stats').classList.add('hidden');
+            
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                btn.classList.remove('active', 'text-pink-500');
+                btn.classList.add('text-gray-400');
+            });
+            
+            btnElement.classList.remove('text-gray-400');
+            btnElement.classList.add('active', 'text-pink-500');
+
+            if (tabId === 'timeline') renderTimeline();
+            if (tabId === 'stats') renderStats();
+        }
+
+        function renderTimeline() {
+            const container = document.getElementById('timelineContainer');
+            const emptyMsg = document.getElementById('emptyStateMsg');
+            container.innerHTML = '';
+            
+            let filteredRecords = records;
+            
+            if (currentFilter !== 'all') {
+                filteredRecords = records.filter(r => r.date === currentFilter);
+                document.getElementById('currentFilterDate').innerText = formatDisplayDate(currentFilter);
+            } else {
+                document.getElementById('currentFilterDate').innerText = '전체 보기';
+            }
+
+            if (filteredRecords.length === 0) {
+                container.appendChild(emptyMsg);
+                emptyMsg.style.display = 'block';
+                return;
+            } else {
+                emptyMsg.style.display = 'none';
+            }
+
+            const grouped = {};
+            filteredRecords.forEach(record => {
+                if (!grouped[record.date]) grouped[record.date] = [];
+                grouped[record.date].push(record);
+            });
+
+            Object.keys(grouped).sort().reverse().forEach(date => {
+                const dateHeader = document.createElement('div');
+                dateHeader.className = 'relative flex items-center justify-between z-10 mb-4 mt-6 first:mt-2';
+                dateHeader.innerHTML = `
+                    <div class="bg-white px-3 py-1 rounded-full text-xs font-bold text-gray-600 border border-gray-200 shadow-sm shadow-gray-100 flex items-center">
+                        <i class="fa-regular fa-calendar mr-1.5 text-gray-400"></i> ${formatDisplayDate(date)} 
+                        <span class="ml-2 text-pink-500 bg-pink-50 px-1.5 rounded-md">${grouped[date].length}회</span>
+                    </div>
+                `;
+                container.appendChild(dateHeader);
+
+                grouped[date].forEach((record, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'relative flex items-start group mb-4';
+                    
+                    let typeColor = 'bg-gray-400';
+                    let typeBg = 'bg-gray-50';
+                    let typeText = '';
+                    
+                    if (record.type === '건조한(마른)') { typeColor = 'bg-yellow-400'; typeBg = 'bg-yellow-50'; typeText = '마른 기침'; }
+                    else if (record.type === '가래(젖은)') { typeColor = 'bg-blue-400'; typeBg = 'bg-blue-50'; typeText = '가래 기침'; }
+                    else if (record.type === '심한(발작)') { typeColor = 'bg-red-400'; typeBg = 'bg-red-50'; typeText = '심한 기침'; }
+                    
+                    let memoHtml = '';
+                    if (record.memo) {
+                        memoHtml = `<p class="text-xs text-gray-500 mt-1.5 bg-white p-2 rounded border border-gray-100"><i class="fa-solid fa-pen mr-1 text-gray-300"></i>${record.memo}</p>`;
+                    }
+                    
+                    let typeTagHtml = '';
+                    if (typeText) {
+                         typeTagHtml = `<span class="text-[10px] ${typeColor.replace('bg-', 'text-')} ${typeBg} px-1.5 py-0.5 rounded ml-2 font-medium border border-${typeColor.replace('bg-', '')}/20">${typeText}</span>`;
+                    }
+
+                    item.innerHTML = `
+                        <div class="absolute left-0 md:left-1/2 flex items-center justify-center w-10 h-10 -translate-x-1/2 md:translate-x-[-50%] z-10">
+                            <div class="w-3 h-3 rounded-full ${typeColor} border-2 border-white shadow-sm ring-2 ring-white"></div>
+                        </div>
+                        
+                        <div class="ml-10 md:ml-0 md:w-1/2 ${index % 2 === 0 ? 'md:pr-8 md:text-right md:ml-auto' : 'md:pl-8 md:mr-auto'} w-full">
+                            <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 relative">
+                                <button onclick="promptDeleteItem('${record.docId}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-full bg-gray-50 hover:bg-red-50 transition-colors">
+                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                </button>
+                                
+                                <div class="flex items-center ${index % 2 === 0 ? 'md:justify-end' : ''} mb-1">
+                                    <span class="text-lg font-bold text-gray-800 tracking-tight">${record.time}</span>
+                                    ${typeTagHtml}
+                                </div>
+                                ${memoHtml}
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+            });
+        }
+
+        const overlay = document.getElementById('modalOverlay');
+        const modal = document.getElementById('optionModal');
+
+        function openModal(titleId, contentId) {
+            document.getElementById('modalTitle').innerText = titleId;
+            
+            document.getElementById('dateFilterContent').classList.add('hidden');
+            document.getElementById('exportContent').classList.add('hidden');
+            document.getElementById('confirmClearContent').classList.add('hidden');
+            document.getElementById('deleteItemContent').classList.add('hidden');
+            document.getElementById('manualEntryContent').classList.add('hidden');
+            
+            document.getElementById(contentId).classList.remove('hidden');
+            
+            overlay.classList.remove('hidden');
+            setTimeout(() => overlay.classList.add('opacity-100'), 10);
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.classList.remove('translate-y-full'), 10);
+        }
+
+        function closeModal() {
+            overlay.classList.remove('opacity-100');
+            modal.classList.add('translate-y-full');
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                modal.classList.add('hidden');
+            }, 300);
+            
+            itemToDelete = null; 
+        }
+
+        function showDateFilter() {
+            const dates = [...new Set(records.map(r => r.date))].sort().reverse();
+            const listEl = document.getElementById('dynamicDateList');
+            listEl.innerHTML = '';
+            
+            document.getElementById('check-all').classList.toggle('hidden', currentFilter !== 'all');
+
+            dates.forEach(date => {
+                const isSelected = date === currentFilter;
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left px-4 py-3 rounded-xl border font-medium flex justify-between items-center transition-colors ${isSelected ? 'border-pink-300 bg-pink-50 text-pink-700' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`;
+                btn.onclick = () => applyDateFilter(date);
+                
+                const count = records.filter(r => r.date === date).length;
+                
+                btn.innerHTML = `
+                    <div>
+                        <span>${formatDisplayDate(date)}</span>
+                        <span class="text-xs ml-2 ${isSelected ? 'text-pink-500' : 'text-gray-400'}">${count}회</span>
+                    </div>
+                    <i class="fa-solid fa-check ${isSelected ? 'text-pink-500' : 'hidden'}"></i>
+                `;
+                listEl.appendChild(btn);
+            });
+            
+            openModal('날짜 선택', 'dateFilterContent');
+        }
+
+        function applyDateFilter(date) {
+            currentFilter = date;
+            closeModal();
+            renderTimeline();
+        }
+
+        function exportData() {
+            if (records.length === 0) {
+                alert('내보낼 기록이 없습니다.');
+                return;
+            }
+            
+            let text = `[쏘이 기침 기록]\n`;
+            
+            const grouped = {};
+            records.forEach(r => {
+                if (!grouped[r.date]) grouped[r.date] = [];
+                grouped[r.date].push(r);
+            });
+
+            const sortedDates = Object.keys(grouped).sort().reverse();
+            
+            sortedDates.forEach(date => {
+                text += `\n▶ ${date} (총 ${grouped[date].length}회)\n`;
+                const dayRecords = grouped[date].sort((a, b) => a.timestamp - b.timestamp); 
+                
+                dayRecords.forEach(r => {
+                    let typeStr = r.type ? `[${r.type}] ` : '';
+                    let memoStr = r.memo ? ` - ${r.memo}` : '';
+                    text += `- ${r.time} ${typeStr}${memoStr}\n`;
+                });
+            });
+
+            document.getElementById('exportTextarea').value = text;
+            openModal('데이터 내보내기', 'exportContent');
+        }
+
+        function copyToClipboard() {
+            const textarea = document.getElementById('exportTextarea');
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); 
+            
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(textarea.value).then(() => {
+                        showCopySuccess();
+                    });
+                } else {
+                    document.execCommand('copy');
+                    showCopySuccess();
+                }
+            } catch (err) {
+                console.error('복사 실패', err);
+                alert('복사에 실패했습니다. 텍스트를 직접 선택해서 복사해주세요.');
+            }
+        }
+        
+        function showCopySuccess() {
+            const btn = document.querySelector('#exportContent button');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i>복사 완료!';
+            btn.classList.replace('bg-gray-800', 'bg-green-500');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.replace('bg-green-500', 'bg-gray-800');
+            }, 2000);
+        }
+
+        function confirmClearData() {
+            document.getElementById('exportContent').classList.add('hidden');
+            document.getElementById('confirmClearContent').classList.remove('hidden');
+            document.getElementById('modalTitle').innerText = '데이터 초기화';
+        }
+
+        async function clearAllData() {
+            if(!auth.currentUser) return;
+            
+            try {
+                // 클라우드에서 모든 문서 삭제
+                const promises = records.map(r => deleteDoc(doc(db, 'cough_records', r.docId)));
+                await Promise.all(promises);
+                
+                currentFilter = 'all';
+                closeModal();
+                showToast('<i class="fa-solid fa-trash-can text-red-400 mr-2"></i>모든 기록이 삭제되었습니다.');
+            } catch(e) {
+                console.error("Error clearing data:", e);
+                alert("삭제 중 오류가 발생했습니다.");
+            }
+        }
+
+        let itemToDelete = null;
+        
+        function promptDeleteItem(docId) {
+            itemToDelete = docId;
+            document.getElementById('confirmItemDeleteBtn').onclick = executeDeleteItem;
+            openModal('기록 삭제', 'deleteItemContent');
+        }
+        
+        async function executeDeleteItem() {
+            if (itemToDelete && auth.currentUser) {
+                try {
+                    await deleteDoc(doc(db, 'cough_records', itemToDelete));
+                    closeModal();
+                } catch(e) {
+                    console.error("Error deleting document:", e);
+                    alert("삭제 실패했습니다.");
+                }
+            }
+        }
+
+        function openManualEntryModal() {
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            document.getElementById('manualDate').value = getFormattedDate(yesterday);
+            document.getElementById('manualTime').value = getFormattedTime(today); 
+            document.getElementById('manualType').value = "";
+            document.getElementById('manualMemo').value = "";
+            
+            openModal('과거 기록 추가', 'manualEntryContent');
+        }
+
+        async function addManualRecord() {
+            if(!auth.currentUser) return;
+
+            const dateInput = document.getElementById('manualDate').value;
+            const timeInput = document.getElementById('manualTime').value;
+            const typeInput = document.getElementById('manualType').value;
+            const memoInput = document.getElementById('manualMemo').value.trim();
+
+            if (!dateInput || !timeInput) {
+                alert('날짜와 시간을 모두 입력해주세요.');
+                return;
+            }
+
+            const dateTimeStr = `${dateInput}T${timeInput}`;
+            const recordDate = new Date(dateTimeStr);
+
+            const newRecord = {
+                timestamp: recordDate.getTime(),
+                date: dateInput,
+                time: timeInput,
+                type: typeInput,
+                memo: memoInput,
+                hour: recordDate.getHours()
+            };
+
+            try {
+                const recordsRef = collection(db, 'cough_records');
+                await addDoc(recordsRef, newRecord);
+                
+                closeModal();
+                showToast('<i class="fa-solid fa-check text-green-400 mr-2"></i>과거 기록이 추가되었습니다.');
+            } catch(e) {
+                console.error("Error adding manual record:", e);
+                alert("저장 실패했습니다.");
+            }
+        }
+
+        function renderStats() {
+            if (records.length === 0) {
+                if(chartInstance) { chartInstance.destroy(); chartInstance = null; }
+                const canvas = document.getElementById('weeklyChart');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.font = '12px Noto Sans KR';
+                ctx.fillStyle = '#9ca3af';
+                ctx.textAlign = 'center';
+                ctx.fillText('기록된 데이터가 없습니다.', canvas.width / 2, canvas.height / 2);
+                
+                document.getElementById('timeStatsContainer').innerHTML = '<div class="col-span-4 text-xs text-gray-400 py-4">데이터 없음</div>';
+                document.getElementById('typeStatsContainer').innerHTML = '<div class="text-xs text-center text-gray-400 py-4">데이터 없음</div>';
+                return;
+            }
+
+            renderWeeklyChart();
+            renderTimeStats();
+            renderTypeStats();
+        }
+
+        function renderWeeklyChart() {
+            const dates = [];
+            const counts = [];
+            const today = new Date();
+            
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                const dateStr = getFormattedDate(d);
+                dates.push(`${d.getMonth()+1}/${d.getDate()}`);
+                counts.push(records.filter(r => r.date === dateStr).length);
+            }
+
+            const ctx = document.getElementById('weeklyChart').getContext('2d');
+            
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            let gradient = ctx.createLinearGradient(0, 0, 0, 200);
+            gradient.addColorStop(0, 'rgba(236, 72, 153, 0.4)'); 
+            gradient.addColorStop(1, 'rgba(236, 72, 153, 0.0)');
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '기침 횟수',
+                        data: counts,
+                        borderColor: '#EC4899',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#EC4899',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            titleColor: '#374151',
+                            bodyColor: '#EC4899',
+                            borderColor: '#e5e7eb',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) { return context.parsed.y + '회'; }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0, color: '#9ca3af', font: {size: 10} },
+                            grid: { color: '#f3f4f6', drawBorder: false }
+                        },
+                        x: {
+                            ticks: { color: '#6b7280', font: {size: 10} },
+                            grid: { display: false, drawBorder: false }
+                        }
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+        }
+
+        function renderTimeStats() {
+            const timeGroups = {
+                '새벽\n(0-6시)': { count: 0, icon: 'fa-moon', color: 'text-indigo-400', bg: 'bg-indigo-50' },
+                '오전\n(6-12시)': { count: 0, icon: 'fa-sun', color: 'text-yellow-500', bg: 'bg-yellow-50' },
+                '오후\n(12-18시)': { count: 0, icon: 'fa-cloud-sun', color: 'text-orange-400', bg: 'bg-orange-50' },
+                '저녁/밤\n(18-24시)': { count: 0, icon: 'fa-star', color: 'text-blue-400', bg: 'bg-blue-50' }
+            };
+
+            records.forEach(r => {
+                const h = r.hour;
+                if (h >= 0 && h < 6) timeGroups['새벽\n(0-6시)'].count++;
+                else if (h >= 6 && h < 12) timeGroups['오전\n(6-12시)'].count++;
+                else if (h >= 12 && h < 18) timeGroups['오후\n(12-18시)'].count++;
+                else timeGroups['저녁/밤\n(18-24시)'].count++;
+            });
+
+            const container = document.getElementById('timeStatsContainer');
+            container.innerHTML = '';
+
+            Object.keys(timeGroups).forEach(key => {
+                const data = timeGroups[key];
+                const div = document.createElement('div');
+                div.className = `${data.bg} rounded-xl p-2 flex flex-col items-center justify-center`;
+                div.innerHTML = `
+                    <i class="fa-solid ${data.icon} ${data.color} mb-1 text-lg"></i>
+                    <div class="text-[10px] text-gray-500 whitespace-pre-line leading-tight mb-1">${key}</div>
+                    <div class="font-bold text-gray-800">${data.count}<span class="text-[10px] font-normal text-gray-500 ml-0.5">회</span></div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderTypeStats() {
+            const types = {
+                '건조한(마른)': { label: '마른 기침', count: 0, color: 'bg-yellow-400' },
+                '가래(젖은)': { label: '가래 기침', count: 0, color: 'bg-blue-400' },
+                '심한(발작)': { label: '심한 기침', count: 0, color: 'bg-red-400' },
+                '미입력': { label: '미분류', count: 0, color: 'bg-gray-300' }
+            };
+
+            let total = records.length;
+
+            records.forEach(r => {
+                if (!r.type) types['미입력'].count++;
+                else if (types[r.type]) types[r.type].count++;
+            });
+
+            const container = document.getElementById('typeStatsContainer');
+            container.innerHTML = '';
+
+            const barContainer = document.createElement('div');
+            barContainer.className = 'w-full h-4 flex rounded-full overflow-hidden mb-3';
+            
+            const legendContainer = document.createElement('div');
+            legendContainer.className = 'flex flex-wrap gap-2 text-xs';
+
+            Object.keys(types).forEach(key => {
+                const data = types[key];
+                if (data.count === 0) return;
+
+                const percent = Math.round((data.count / total) * 100);
+
+                const segment = document.createElement('div');
+                segment.className = `${data.color} h-full transition-all duration-500`;
+                segment.style.width = `${percent}%`;
+                segment.title = `${data.label}: ${data.count}회`;
+                barContainer.appendChild(segment);
+
+                const legend = document.createElement('div');
+                legend.className = 'flex items-center w-[48%]';
+                legend.innerHTML = `
+                    <div class="w-2.5 h-2.5 rounded-full ${data.color} mr-1.5"></div>
+                    <span class="text-gray-600 truncate">${data.label} <span class="text-gray-400 ml-1">${percent}%</span></span>
+                `;
+                legendContainer.appendChild(legend);
+            });
+
+            container.appendChild(barContainer);
+            container.appendChild(legendContainer);
+        }
+
+        // HTML 내의 인라인 이벤트 핸들러를 위한 설정
+        window.exportData = exportData;
+        window.switchTab = switchTab;
+        window.closeModal = closeModal;
+        window.showDateFilter = showDateFilter;
+        window.applyDateFilter = applyDateFilter;
+        window.copyToClipboard = copyToClipboard;
+        window.confirmClearData = confirmClearData;
+        window.clearAllData = clearAllData;
+        window.promptDeleteItem = promptDeleteItem;
+        window.openManualEntryModal = openManualEntryModal;
+        window.addManualRecord = addManualRecord;
+        
+    </script>
+</body>
+</html>
